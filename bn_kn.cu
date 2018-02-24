@@ -1,7 +1,7 @@
 /* BN kernel functions */
 
 #include <cstddef>
-#include <cutil_inline.h>
+//#include <cutil_inline.h>
 #include "bn_kn.h"
 
 #define YINGLIN 0

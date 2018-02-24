@@ -18,9 +18,19 @@ using namespace std;
 #include <openssl/bio.h>
 
 #include <cuda_runtime.h>
-#include <cutil_inline.h>
+//#include <cutil_inline.h>
 
 #include "rsa_cuda.h"
+
+struct bignum_st {
+    BN_ULONG *d;                /* Pointer to an array of 'BN_BITS2' bit
+                                 * chunks. */
+    int top;                    /* Index of last used d +1. */
+    /* The next are internal book keeping for bn_expand. */
+    int dmax;                   /* Size of the d array. */
+    int neg;                    /* one if the number is negative */
+    int flags;
+};
 
 #define bnSafeCall(ret) __bnSafeCall(ret, __FILE__, __LINE__)
 
@@ -193,7 +203,7 @@ RNS_CTX *RNS_CTX_new(BIGNUM *N, BIGNUM *d)
 	// exponent d, for any given RSA key, d is constant
 	int d_numbits = BN_num_bits(d);
 	rns_ctx->d_num_bits = d_numbits;
-	rns_ctx->d_len = d->top;
+    rns_ctx->d_len = d->top;
 	memcpy(rns_ctx->d, d->d, d->top*sizeof(BN_ULONG));
 
 	// partition CLNW windows
@@ -354,11 +364,11 @@ RNS_CTX *RNS_CTX_new(BIGNUM *N, BIGNUM *d)
 void cpyRNSCTX2Dev()
 {
 	if (g_rns_ctx_d == NULL) {
-		cutilSafeCall(cudaMalloc(&g_rns_ctx_d, 
+        /*cutilSafeCall*/(cudaMalloc(&g_rns_ctx_d,
 					MAX_RNS_CTXS * sizeof(RNS_CTX)));
 	}
 
-	cutilSafeCall(cudaMemcpy(g_rns_ctx_d, g_rns_ctx, 
+    /*cutilSafeCall*/(cudaMemcpy(g_rns_ctx_d, g_rns_ctx,
 			MAX_RNS_CTXS * sizeof(RNS_CTX), 
 			cudaMemcpyHostToDevice));
 }
@@ -422,7 +432,7 @@ static struct dev_context *get_device()
 	int dev_id;
 	struct dev_context *dev;
 	
-	cutilSafeCall(cudaGetDevice(&dev_id));
+    /*cutilSafeCall*/(cudaGetDevice(&dev_id));
 	dev = &g_dev[dev_id];
 
 	if (!dev->initialized) {
@@ -430,13 +440,13 @@ static struct dev_context *get_device()
 
 		dev->initialized = true;
 
-		cutilSafeCall(cudaEventCreate(&dev->evt_begin));
-		cutilSafeCall(cudaEventCreate(&dev->evt_end));
+        /*cutilSafeCall*/(cudaEventCreate(&dev->evt_begin));
+        /*cutilSafeCall*/(cudaEventCreate(&dev->evt_end));
 
 		// XXX
 		size = sizeof(MODULI) * MAX_NUM_MSG * MAX_WIN * MAX_BS;
-		cutilSafeCall(cudaMalloc(&dev->M_A_d, size));
-		cutilSafeCall(cudaMalloc(&dev->M_B_d, size));
+        /*cutilSafeCall*/(cudaMalloc(&dev->M_A_d, size));
+        /*cutilSafeCall*/(cudaMalloc(&dev->M_B_d, size));
 
 		size = sizeof(MODULI) * MAX_NUM_MSG * MAX_BS;
 		dev->b_A = (MODULI *)alloc_pinned_mem(size);
@@ -444,14 +454,14 @@ static struct dev_context *get_device()
 		dev->r_A = (MODULI *)alloc_pinned_mem(size);
 		dev->r_B = (MODULI *)alloc_pinned_mem(size);
 		
-		cutilSafeCall(cudaMalloc(&dev->b_A_d, size));
-		cutilSafeCall(cudaMalloc(&dev->b_B_d, size));
-		cutilSafeCall(cudaMalloc(&dev->r_A_d, size));
-		cutilSafeCall(cudaMalloc(&dev->r_B_d, size));
+        /*cutilSafeCall*/(cudaMalloc(&dev->b_A_d, size));
+        /*cutilSafeCall*/(cudaMalloc(&dev->b_B_d, size));
+        /*cutilSafeCall*/(cudaMalloc(&dev->r_A_d, size));
+        /*cutilSafeCall*/(cudaMalloc(&dev->r_B_d, size));
 
 		size = MAX_NUM_MSG * sizeof(int);
 		dev->rns_ctx_idx = (int *)alloc_pinned_mem(size);
-		cutilSafeCall(cudaMalloc(&dev->rns_ctx_idx_d, size));
+        /*cutilSafeCall*/(cudaMalloc(&dev->rns_ctx_idx_d, size));
 	}
 
 	return dev;
@@ -534,37 +544,37 @@ float BN_mod_exp_mont_batch_cu(BIGNUM *r[], BIGNUM *b[], int n, RNS_CTX *rns_ctx
 		}
 	}
 
-	cutilSafeCall(cudaMemcpyAsync(dev->rns_ctx_idx_d, dev->rns_ctx_idx, 
+    /*cutilSafeCall*/(cudaMemcpyAsync(dev->rns_ctx_idx_d, dev->rns_ctx_idx,
 			(m / MSGS_PER_BLOCK) * sizeof(int), 
 			cudaMemcpyHostToDevice, 0));
 
 	// copy base numbers
-	cutilSafeCall(cudaMemcpyAsync(dev->b_A_d, dev->b_A, memsize, 
+    /*cutilSafeCall*/(cudaMemcpyAsync(dev->b_A_d, dev->b_A, memsize,
 				cudaMemcpyHostToDevice, 0));
-	cutilSafeCall(cudaMemcpyAsync(dev->b_B_d, dev->b_B, memsize, 
+    /*cutilSafeCall*/(cudaMemcpyAsync(dev->b_B_d, dev->b_B, memsize,
 				cudaMemcpyHostToDevice, 0));
 
 	float elapsed_ms_kernel;
 	dim3 threads_per_block(bsize, MSGS_PER_BLOCK);
 	int num_blocks = m / MSGS_PER_BLOCK;
 
-	cutilSafeCall(cudaEventRecord(dev->evt_begin, 0));
+    /*cutilSafeCall*/(cudaEventRecord(dev->evt_begin, 0));
 	/* call kernel function, use one block per message */
 	BN_mod_exp_RNS_MONT_batch_kn<<<num_blocks, threads_per_block>>>(dev->r_A_d, dev->r_B_d, 
 			dev->b_A_d, dev->b_B_d, 
 			(MODULI (*)[MAX_WIN][MAX_BS])dev->M_A_d, 
 			(MODULI (*)[MAX_WIN][MAX_BS])dev->M_B_d,
 			g_rns_ctx_d, dev->rns_ctx_idx_d);
-	cutilSafeCall(cudaEventRecord(dev->evt_end, 0));
+    /*cutilSafeCall*/(cudaEventRecord(dev->evt_end, 0));
 
 	/* copy back result */
-	cutilSafeCall(cudaMemcpyAsync(dev->r_A, dev->r_A_d, memsize, 
+    /*cutilSafeCall*/(cudaMemcpyAsync(dev->r_A, dev->r_A_d, memsize,
 				cudaMemcpyDeviceToHost, 0));
-	cutilSafeCall(cudaMemcpyAsync(dev->r_B, dev->r_B_d, memsize, 
+    /*cutilSafeCall*/(cudaMemcpyAsync(dev->r_B, dev->r_B_d, memsize,
 				cudaMemcpyDeviceToHost, 0));
 
-	cutilSafeCall(cudaThreadSynchronize());
-	cutilSafeCall(cudaEventElapsedTime(&elapsed_ms_kernel, 
+    /*cutilSafeCall*/(cudaThreadSynchronize());
+    /*cutilSafeCall*/(cudaEventElapsedTime(&elapsed_ms_kernel,
 			dev->evt_begin, dev->evt_end));
 
 	/* Convert results from rns to radix representation */

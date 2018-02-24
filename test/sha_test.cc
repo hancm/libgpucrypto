@@ -30,7 +30,7 @@ typedef struct hmac_sha1_param
 	unsigned        total_size;
 	unsigned        num_flows;
 	uint8_t         *out;
-} hmac_sha1_param;
+} hmac_sha1_param_t;
 
 
 void gen_hmac_sha1_data(operation_batch_t *ops,

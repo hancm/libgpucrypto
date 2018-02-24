@@ -1,14 +1,14 @@
 #include "pinned_mem_pool.hh"
 
 #include <cuda_runtime.h>
-#include <cutil_inline.h>
+//#include <cutil_inline.h>
 #include <assert.h>
 
 static void *alloc_pinned_mem(int size)
 {
 	void *ret;
 
-	cutilSafeCall(cudaHostAlloc(&ret, size, cudaHostAllocPortable));
+    /*cutilSafeCall*/(cudaHostAlloc(&ret, size, cudaHostAllocPortable));
 
 	return ret;
 }

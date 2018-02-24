@@ -2,7 +2,7 @@
 #include "aes_kernel.h"
 
 #include <assert.h>
-#include <cutil_inline.h>
+//#include <cutil_inline.h>
 
 #define AES_BLOCK_SIZE 16
 #define THREADS_PER_BLK 256 // in order to load t box into shared memory on parallel
@@ -102,7 +102,7 @@ bool aes_context::sync(const unsigned int  stream_id,
         if (block) {
 		dev_ctx_->sync(stream_id, true);
 		if (copy_result && dev_ctx_->get_state(stream_id) == WAIT_KERNEL) {
-			cutilSafeCall(cudaMemcpyAsync(streams[stream_id].out,
+            /*cutilSafeCall*/(cudaMemcpyAsync(streams[stream_id].out,
 						      streams[stream_id].out_d,
 						      streams[stream_id].out_len,
 						      cudaMemcpyDeviceToHost,
@@ -125,7 +125,7 @@ bool aes_context::sync(const unsigned int  stream_id,
 				return true;
 			}
 
-			cutilSafeCall(cudaMemcpyAsync(streams[stream_id].out,
+            /*cutilSafeCall*/(cudaMemcpyAsync(streams[stream_id].out,
 						      streams[stream_id].out_d,
 						      streams[stream_id].out_len,
 						      cudaMemcpyDeviceToHost,

@@ -2,6 +2,8 @@
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
+
+#include <unistd.h>
 #include <sys/time.h>
 
 #include <typeinfo>

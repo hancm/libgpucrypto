@@ -6,7 +6,7 @@
 #include <openssl/bn.h>
 
 #include <cuda_runtime.h>
-#include <cutil_inline.h>
+//#include <cutil_inline.h>
 
 #define MAX_STREAMS		16
 #define MP_MAX_NUM_PAIRS	1024

@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <assert.h>
+
 uint64_t get_usec()
 {
 	struct timeval tv;

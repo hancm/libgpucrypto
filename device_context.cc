@@ -1,7 +1,7 @@
 #include "device_context.hh"
 
 #include <sys/time.h>
-#include <cutil_inline.h>
+//#include <cutil_inline.h>
 #include <assert.h>
 
 static uint64_t get_now() {
@@ -21,13 +21,13 @@ device_context::~device_context()
 		return;
 
 	for (unsigned i = 1; i <= nstream_; i++) {
-		cutilSafeCall(cudaStreamDestroy(stream_ctx_[i].stream));
-		cutilSafeCall(cudaFreeHost(stream_ctx_[i].checkbits));
+        /*cutilSafeCall*/(cudaStreamDestroy(stream_ctx_[i].stream));
+        /*cutilSafeCall*/(cudaFreeHost(stream_ctx_[i].checkbits));
 		stream_ctx_[i].pool.destroy();
 	}
 
 	if (nstream_ == 0) {
-		cutilSafeCall(cudaFreeHost((void*)stream_ctx_[0].checkbits));
+        /*cutilSafeCall*/(cudaFreeHost((void*)stream_ctx_[0].checkbits));
 		stream_ctx_[0].pool.destroy();
 	}
 }
@@ -43,15 +43,15 @@ bool device_context::init(const unsigned long size, const unsigned nstream)
 
 	if (nstream_ > 0) {
 		for (unsigned i = 1; i <= nstream; i++) {
-			cutilSafeCall(cudaStreamCreate(&stream_ctx_[i].stream));
+            /*cutilSafeCall*/(cudaStreamCreate(&stream_ctx_[i].stream));
 
 			if (!stream_ctx_[i].pool.init(size))
 				return false;
 			stream_ctx_[i].state = READY;
 
-			cutilSafeCall(cudaHostAlloc(&ret, MAX_BLOCKS, cudaHostAllocMapped));
+            /*cutilSafeCall*/(cudaHostAlloc(&ret, MAX_BLOCKS, cudaHostAllocMapped));
 			stream_ctx_[i].checkbits = (uint8_t*)ret;
-			cutilSafeCall(cudaHostGetDevicePointer((void **)&stream_ctx_[i].checkbits_d, ret, 0));
+            /*cutilSafeCall*/(cudaHostGetDevicePointer((void **)&stream_ctx_[i].checkbits_d, ret, 0));
 		}
 	} else {
 		stream_ctx_[0].stream = 0;
@@ -60,9 +60,9 @@ bool device_context::init(const unsigned long size, const unsigned nstream)
 
 		stream_ctx_[0].state = READY;
 
-		cutilSafeCall(cudaHostAlloc(&ret, MAX_BLOCKS, cudaHostAllocMapped));
+        /*cutilSafeCall*/(cudaHostAlloc(&ret, MAX_BLOCKS, cudaHostAllocMapped));
 		stream_ctx_[0].checkbits = (uint8_t*)ret;
-		cutilSafeCall(cudaHostGetDevicePointer((void **)&stream_ctx_[0].checkbits_d, ret, 0));
+        /*cutilSafeCall*/(cudaHostGetDevicePointer((void **)&stream_ctx_[0].checkbits_d, ret, 0));
 	}
 	return true;
 }

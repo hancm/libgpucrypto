@@ -4,6 +4,42 @@
 
 #include "rsa_context_mp.hh"
 
+struct rsa_st {
+    /*
+     * The first parameter is used to pickup errors where this is passed
+     * instead of aEVP_PKEY, it is set to 0
+     */
+    int pad;
+    long version;
+    const RSA_METHOD *meth;
+    /* functional reference if 'meth' is ENGINE-provided */
+    ENGINE *engine;
+    BIGNUM *n;
+    BIGNUM *e;
+    BIGNUM *d;
+    BIGNUM *p;
+    BIGNUM *q;
+    BIGNUM *dmp1;
+    BIGNUM *dmq1;
+    BIGNUM *iqmp;
+    /* be careful using this if the RSA structure is shared */
+    CRYPTO_EX_DATA ex_data;
+    int references;
+    int flags;
+    /* Used to cache montgomery values */
+    BN_MONT_CTX *_method_mod_n;
+    BN_MONT_CTX *_method_mod_p;
+    BN_MONT_CTX *_method_mod_q;
+    /*
+     * all BIGNUM values are actually in the following data, if it is not
+     * NULL
+     */
+    char *bignum_data;
+    BN_BLINDING *blinding;
+    BN_BLINDING *mt_blinding;
+    CRYPTO_RWLOCK *lock;
+};
+
 rsa_context_mp::rsa_context_mp(int keylen)
 	: rsa_context(keylen)
 {
@@ -34,20 +70,20 @@ rsa_context_mp::~rsa_context_mp()
 	BN_free(out_bn_p);
 	BN_free(out_bn_q);
 
-	cutilSafeCall(cudaFree(sw_d));
-	cutilSafeCall(cudaFree(n_d));
-	cutilSafeCall(cudaFree(np_d));
-	cutilSafeCall(cudaFree(r_sqr_d));
-	cutilSafeCall(cudaFree(iqmp_d));
+    /*cutilSafeCall*/(cudaFree(sw_d));
+    /*cutilSafeCall*/(cudaFree(n_d));
+    /*cutilSafeCall*/(cudaFree(np_d));
+    /*cutilSafeCall*/(cudaFree(r_sqr_d));
+    /*cutilSafeCall*/(cudaFree(iqmp_d));
 
 	for (unsigned int i = 0; i <= max_stream; i++) {
-		cutilSafeCall(cudaFree(streams[i].a_d));
-		cutilSafeCall(cudaFree(streams[i].ret_d));
-		cutilSafeCall(cudaFree(streams[i].dbg_d));
+        /*cutilSafeCall*/(cudaFree(streams[i].a_d));
+        /*cutilSafeCall*/(cudaFree(streams[i].ret_d));
+        /*cutilSafeCall*/(cudaFree(streams[i].dbg_d));
 
-		cutilSafeCall(cudaFreeHost(streams[i].a));
-		cutilSafeCall(cudaFreeHost(streams[i].ret));
-		cutilSafeCall(cudaFreeHost(streams[i].dbg));
+        /*cutilSafeCall*/(cudaFreeHost(streams[i].a));
+        /*cutilSafeCall*/(cudaFreeHost(streams[i].ret));
+        /*cutilSafeCall*/(cudaFreeHost(streams[i].dbg));
 	}
 }
 
@@ -166,7 +202,7 @@ bool rsa_context_mp::sync(unsigned int stream_id, bool block, bool copy_result)
 		    streams[stream_id].post_launched == true) {
 			//copy result
 			dev_ctx_->set_state(stream_id, WAIT_COPY);
-			cutilSafeCall(cudaMemcpyAsync(streams[stream_id].ret,
+            /*cutilSafeCall*/(cudaMemcpyAsync(streams[stream_id].ret,
 						      streams[stream_id].ret_d,
 						      sizeof(WORD[2][MAX_S]) * streams[stream_id].n,
 						      cudaMemcpyDeviceToHost,
@@ -227,7 +263,7 @@ bool rsa_context_mp::sync(unsigned int stream_id, bool block, bool copy_result)
 		} else {
 			//start copying result
 			dev_ctx_->set_state(stream_id, WAIT_COPY);
-			cutilSafeCall(cudaMemcpyAsync(streams[stream_id].ret,
+            /*cutilSafeCall*/(cudaMemcpyAsync(streams[stream_id].ret,
 						      streams[stream_id].ret_d,
 						      sizeof(WORD[2][MAX_S]) * streams[stream_id].n,
 						      cudaMemcpyDeviceToHost,
@@ -288,23 +324,23 @@ void rsa_context_mp::gpu_setup()
 		mp_get_sw(&sw[0], mp_e[0], word_len);
 		mp_get_sw(&sw[1], mp_e[1], word_len);
 
-		cutilSafeCall(cudaMalloc(&sw_d, sizeof(struct mp_sw) * 2));
-		cutilSafeCall(cudaMemcpy(sw_d, sw, sizeof(struct mp_sw) * 2, cudaMemcpyHostToDevice));
+        /*cutilSafeCall*/(cudaMalloc(&sw_d, sizeof(struct mp_sw) * 2));
+        /*cutilSafeCall*/(cudaMemcpy(sw_d, sw, sizeof(struct mp_sw) * 2, cudaMemcpyHostToDevice));
 	}
 
 	{
 		mp_bn2mp(mp_n[0], rsa->p, word_len);
 		mp_bn2mp(mp_n[1], rsa->q, word_len);
 
-		cutilSafeCall(cudaMalloc(&n_d, sizeof(mp_n[0]) * 2));
-		cutilSafeCall(cudaMemcpy(n_d, mp_n, sizeof(mp_n[0]) * 2, cudaMemcpyHostToDevice));
+        /*cutilSafeCall*/(cudaMalloc(&n_d, sizeof(mp_n[0]) * 2));
+        /*cutilSafeCall*/(cudaMemcpy(n_d, mp_n, sizeof(mp_n[0]) * 2, cudaMemcpyHostToDevice));
 	}
 
 	{
 		mp_bn2mp(mp_iqmp, rsa->iqmp, word_len);
 
-		cutilSafeCall(cudaMalloc(&iqmp_d, sizeof(mp_iqmp)));
-		cutilSafeCall(cudaMemcpy(iqmp_d, mp_iqmp, sizeof(mp_iqmp), cudaMemcpyHostToDevice));
+        /*cutilSafeCall*/(cudaMalloc(&iqmp_d, sizeof(mp_iqmp)));
+        /*cutilSafeCall*/(cudaMemcpy(iqmp_d, mp_iqmp, sizeof(mp_iqmp), cudaMemcpyHostToDevice));
 	}
 
 	r = BN_new();
@@ -339,30 +375,30 @@ void rsa_context_mp::gpu_setup()
 		BN_mod_mul(R_SQR, r, r, rsa->q, bn_ctx);
 		mp_bn2mp(mp_r_sqr[1], R_SQR, word_len);
 
-		cutilSafeCall(cudaMalloc(&r_sqr_d, sizeof(mp_r_sqr[0]) * 2));
-		cutilSafeCall(cudaMemcpy(r_sqr_d, mp_r_sqr, sizeof(mp_r_sqr[0]) * 2, cudaMemcpyHostToDevice));
+        /*cutilSafeCall*/(cudaMalloc(&r_sqr_d, sizeof(mp_r_sqr[0]) * 2));
+        /*cutilSafeCall*/(cudaMemcpy(r_sqr_d, mp_r_sqr, sizeof(mp_r_sqr[0]) * 2, cudaMemcpyHostToDevice));
 
 		BN_free(R_SQR);
 	}
 
-	cutilSafeCall(cudaMalloc(&np_d, sizeof(mp_np[0]) * 2));
-	cutilSafeCall(cudaMemcpy(np_d, mp_np, sizeof(mp_np[0]) * 2, cudaMemcpyHostToDevice));
+    /*cutilSafeCall*/(cudaMalloc(&np_d, sizeof(mp_np[0]) * 2));
+    /*cutilSafeCall*/(cudaMemcpy(np_d, mp_np, sizeof(mp_np[0]) * 2, cudaMemcpyHostToDevice));
 
-	cutilSafeCall(cudaEventCreate(&begin_evt));
-	cutilSafeCall(cudaEventCreate(&end_evt));
+    /*cutilSafeCall*/(cudaEventCreate(&begin_evt));
+    /*cutilSafeCall*/(cudaEventCreate(&end_evt));
 
 	for (unsigned int i = 0; i <= max_stream; i++) {
-		cutilSafeCall(cudaMalloc(&streams[i].dbg_d, sizeof(WORD[max_batch][2][MAX_S])));
-		cutilSafeCall(cudaMalloc(&streams[i].ret_d, sizeof(WORD[max_batch][2][MAX_S])));
-		cutilSafeCall(cudaMalloc(&streams[i].a_d, sizeof(WORD[max_batch][2][MAX_S])));
+        /*cutilSafeCall*/(cudaMalloc(&streams[i].dbg_d, sizeof(WORD[max_batch][2][MAX_S])));
+        /*cutilSafeCall*/(cudaMalloc(&streams[i].ret_d, sizeof(WORD[max_batch][2][MAX_S])));
+        /*cutilSafeCall*/(cudaMalloc(&streams[i].a_d, sizeof(WORD[max_batch][2][MAX_S])));
 
-		cutilSafeCall(cudaHostAlloc(&streams[i].a,
+        /*cutilSafeCall*/(cudaHostAlloc(&streams[i].a,
 					sizeof(WORD[max_batch][2][MAX_S]),
 					cudaHostAllocPortable));
-		cutilSafeCall(cudaHostAlloc(&streams[i].ret,
+        /*cutilSafeCall*/(cudaHostAlloc(&streams[i].ret,
 					sizeof(WORD[max_batch][2][MAX_S]),
 					cudaHostAllocPortable));
-		cutilSafeCall(cudaHostAlloc(&streams[i].dbg,
+        /*cutilSafeCall*/(cudaHostAlloc(&streams[i].dbg,
 					sizeof(WORD[max_batch][2][MAX_S]),
 					cudaHostAllocPortable));
 	}

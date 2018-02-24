@@ -5,6 +5,16 @@
 
 #include "mp_modexp.h"
 
+struct bignum_st {
+    BN_ULONG *d;                /* Pointer to an array of 'BN_BITS2' bit
+                                 * chunks. */
+    int top;                    /* Index of last used d +1. */
+    /* The next are internal book keeping for bn_expand. */
+    int dmax;                   /* Size of the d array. */
+    int neg;                    /* one if the number is negative */
+    int flags;
+};
+
 void mp_print(const char *name, const WORD *a, int word_len)
 {
 	printf("%-8s: ", name);

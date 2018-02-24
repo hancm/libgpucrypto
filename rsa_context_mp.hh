@@ -6,7 +6,7 @@
 #include "device_context.hh"
 
 #include <cuda_runtime.h>
-#include <cutil_inline.h>
+//#include <cutil_inline.h>
 
 /**
  * class rsa_context

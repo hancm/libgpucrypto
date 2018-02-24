@@ -3,7 +3,7 @@
 
 #include <assert.h>
 #include <cuda_runtime.h>
-#include <cutil_inline.h>
+//#include <cutil_inline.h>
 
 sha_context::sha_context(device_context *dev_ctx)
 {
@@ -99,7 +99,7 @@ bool sha_context::sync(const unsigned int  stream_id,
         if (block) {
 		dev_ctx_->sync(stream_id, true);
 		if (copy_result && dev_ctx_->get_state(stream_id) == WAIT_KERNEL) {
-			cutilSafeCall(cudaMemcpyAsync(streams[stream_id].out,
+            /*cutilSafeCall*/(cudaMemcpyAsync(streams[stream_id].out,
 						      streams[stream_id].out_d,
 						      streams[stream_id].out_len,
 						      cudaMemcpyDeviceToHost,
@@ -123,7 +123,7 @@ bool sha_context::sync(const unsigned int  stream_id,
 				return true;
 			}
 
-			cutilSafeCall(cudaMemcpyAsync(streams[stream_id].out,
+            /*cutilSafeCall*/(cudaMemcpyAsync(streams[stream_id].out,
 						      streams[stream_id].out_d,
 						      streams[stream_id].out_len,
 						      cudaMemcpyDeviceToHost,
