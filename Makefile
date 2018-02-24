@@ -19,7 +19,7 @@ OBJS_FILE = $(CU_SRC_FILES:.cu=.o) $(CC_SRC_FILES:.cc=.o)
 OBJS = $(addprefix $(OBJS_DIR)/, $(OBJS_FILE))
 DEPS = Makefile.dep
 
-all: $(TARGET) #test
+all: $(TARGET) test
 
 $(TARGET): $(DEPS) $(OBJS) | $(TARGET_DIR) $(OBJS_DIR)
 	ar rcs $@ $(OBJS)
