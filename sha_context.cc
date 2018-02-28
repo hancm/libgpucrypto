@@ -33,13 +33,14 @@ void sha_context::hmac_sha1(const void           *memory_start,
 	dev_ctx_->set_state(stream_id, WAIT_KERNEL);
 	cuda_mem_pool *pool = dev_ctx_->get_cuda_mem_pool(stream_id);
 	void *memory_d = pool->alloc(data_size);;
+    assert(NULL != memory_d);
 
-	//copy input data
-	cudaMemcpyAsync(memory_d,
-			memory_start,
-			data_size,
-			cudaMemcpyHostToDevice,
-			dev_ctx_->get_stream(stream_id));
+    //copy input data
+    cudaMemcpyAsync(memory_d,
+          memory_start,
+          data_size,
+          cudaMemcpyHostToDevice,
+          dev_ctx_->get_stream(stream_id));
 
 	//variables need for kernel launch
 	int threads_per_blk = SHA1_THREADS_PER_BLK;
@@ -52,7 +53,7 @@ void sha_context::hmac_sha1(const void           *memory_start,
 	char     *in_d         = (char *)memory_d + in_pos;
 	char     *keys_d       = (char *)memory_d + keys_pos;
 	uint32_t *pkt_offset_d = (uint32_t *)((uint8_t *)memory_d + offsets_pos);
-	uint16_t *lengths_d    = (uint16_t *)((uint8_t *)memory_d + lengths_pos);
+    /*uint16_t*/ uint32_t *lengths_d    = /*(uint16_t *)*/(uint32_t*)((uint8_t *)memory_d + lengths_pos);
 
 	//clear checkbits before kernel execution
 	dev_ctx_->clear_checkbits(stream_id, num_blks);
