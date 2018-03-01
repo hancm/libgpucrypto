@@ -3,11 +3,13 @@
 #include <cstring>
 #include <iostream>
 #include <vector>
+#include <fstream>
 
 #include <sys/time.h>
 #include <typeinfo>
 #include <stdint.h>
 #include <time.h>
+#include <sys/stat.h>
 
 #include <openssl/hmac.h>
 
@@ -23,6 +25,8 @@
 #define HMAC_SHA1_HASH_SIZE 20
 #define MAX_FLOW_LEN (1024 * 1024 * 100)//16384
 #define MAX_FLOW_NUM (1024 * 256)
+
+#define TOTAL_THREAD_NUM (32 * 1024)
 
 #define max(a,b) ((a >= b)?(a):(b))
 
@@ -148,42 +152,94 @@ void hmac_sha1_prepare(operation_batch_t *ops,
 	param->num_flows      = num_flows;
 }
 
-//void hmac_file_sha1_prepare(hmac_sha1_param_t *param,
-//                            pinned_mem_pool   *pool)
-//{
-//    assert(param != NULL);
-//    assert(pool != NULL);
-//
-//    uint32_t *pkt_offset;
-//    uint8_t  *in;
-//    uint32_t *lengths;
-//    uint8_t  *keys;
-//    uint8_t  *out;
-//
-//    unsigned tot_in_size = 0; /* total size of input text */
-//
-////    for (operation_batch_t::iterator i = ops->begin();
-////         i != ops->end(); i++) {
-////        assert((*i).in_len > 0);
-////        tot_in_size += (*i).in_len;
-////    }
-//
-////    unsigned long num_flows = ops->size();
-//
-//    //allocate memory
-//    pkt_offset = (uint32_t *)pool->alloc(sizeof(uint32_t) * (num_flows));
-//    keys       = (uint8_t  *)pool->alloc(num_flows * MAX_KEY_SIZE);
-//    in         = (uint8_t  *)pool->alloc(tot_in_size);
-//    lengths     = (/*uint16_t*/uint32_t *)pool->alloc(sizeof(/*uint16_t*/uint32_t) * num_flows);
-//    out        = (uint8_t  *)pool->alloc(HMAC_SHA1_HASH_SIZE * num_flows);
-//
-//    assert(pkt_offset != NULL);
-//    assert(keys       != NULL);
-//    assert(in         != NULL);
-//    assert(lengths    != NULL);
-//    assert(out        != NULL);
-//
-//    //copy data into pinned memory and set metadata
+void hmac_file_sha1_prepare(const char *file_path,
+                            operation_batch_t *ops,
+                            hmac_sha1_param_t *param,
+                            pinned_mem_pool   *pool)
+{
+    assert(param != NULL);
+    assert(pool != NULL);
+
+    uint32_t *pkt_offset;
+    uint8_t  *in;
+    uint32_t *lengths;
+    uint8_t  *keys;
+    uint8_t  *out;
+
+    unsigned tot_in_size = 0; /* total size of input text */
+    struct stat buf;
+    stat(file_path, &buf);
+    tot_in_size = buf.st_size;
+    printf("file size: %d\n", tot_in_size);
+    assert(tot_in_size > 0);
+
+//    for (operation_batch_t::iterator i = ops->begin();
+//         i != ops->end(); i++) {
+//        assert((*i).in_len > 0);
+//        tot_in_size += (*i).in_len;
+//    }
+
+    unsigned long num_flows = TOTAL_THREAD_NUM;
+
+    int threadDataLen = tot_in_size / (num_flows - 1);
+    int threadDataFree = tot_in_size % (num_flows - 1);
+    if (0 == threadDataFree) {
+        threadDataLen = (tot_in_size - 1) / (num_flows - 1);
+        threadDataFree = tot_in_size % threadDataLen;
+    }
+
+    if (0 == tot_in_size % num_flows) {
+        threadDataLen = tot_in_size / num_flows;
+        threadDataFree = 0;
+    }
+    printf("dataLen: %d, dataFree: %d.\n", threadDataLen, threadDataFree);
+
+    //allocate memory
+    pkt_offset = (uint32_t *)pool->alloc(sizeof(uint32_t) * (num_flows));
+    keys       = (uint8_t  *)pool->alloc(num_flows * MAX_KEY_SIZE);
+    in         = (uint8_t  *)pool->alloc(tot_in_size);
+    lengths     = (uint32_t *)pool->alloc(sizeof(uint32_t) * num_flows);
+    out        = (uint8_t  *)pool->alloc(HMAC_SHA1_HASH_SIZE * num_flows);
+
+    assert(pkt_offset != NULL);
+    assert(keys       != NULL);
+    assert(in         != NULL);
+    assert(lengths    != NULL);
+    assert(out        != NULL);
+
+    // 生成数据
+    // memcpy(keys + cnt * MAX_KEY_SIZE, (*i).key,  MAX_KEY_SIZE);
+//    memcpy(in + sum_input,  (*i).in,   (*i).in_len);
+    std::ifstream inFile(file_path, std::ifstream::binary);
+    if (!inFile) {
+        printf("Failed to open.\n");
+        return;
+    }
+
+    inFile.read((char*)in, tot_in_size);
+    if (!inFile) {
+        printf("Failed to write.\n");
+        return;
+    }
+    inFile.close();
+
+    // 生成数据偏移和长度
+    for (int i = 0; i < num_flows; i++) {
+        pkt_offset[i] = threadDataLen * i;
+        lengths[i]    = threadDataLen;
+    }
+
+    if (0 != threadDataFree) {
+        lengths[num_flows - 1] = threadDataFree;
+    }
+
+//    printf("ops size: %d, num flows: %d.\n", ops->size(), num_flows);
+//    for (int i = 0; i < ops->size() - 1 && i < num_flows - 1; ++i) {
+//        memcpy((*ops)[i].in, in + pkt_offset[i], lengths[i]);
+//        (*ops)[i].in_len = lengths[i];
+//    }
+
+    //copy data into pinned memory and set metadata
 //    unsigned cnt = 0;
 //    unsigned sum_input = 0;
 //    for (operation_batch_t::iterator i = ops->begin();
@@ -197,20 +253,18 @@ void hmac_sha1_prepare(operation_batch_t *ops,
 //        cnt++;
 //        sum_input += (*i).in_len;
 //    }
-//
-//    //set param for sha_context api
-//    param->memory_start   = (uint8_t*)pkt_offset;
-//    param->pkt_offset_pos = (unsigned long)((uint8_t *)pkt_offset -
-//                        param->memory_start);
-//    param->in_pos         = (unsigned long)(in      - param->memory_start);
-//    param->key_pos        = (unsigned long)(keys    - param->memory_start);
-//    param->length_pos     = (unsigned long)((uint8_t *)lengths
-//                        - param->memory_start);
-//    param->total_size     = (unsigned long)(out     - param->memory_start);
-//
-//    param->out            = out;
-//    param->num_flows      = num_flows;
-//}
+
+    //set param for sha_context api
+    param->memory_start   = (uint8_t*)pkt_offset;
+    param->pkt_offset_pos = (unsigned long)((uint8_t *)pkt_offset - param->memory_start);
+    param->in_pos         = (unsigned long)(in      - param->memory_start);
+    param->key_pos        = (unsigned long)(keys    - param->memory_start);
+    param->length_pos     = (unsigned long)((uint8_t *)lengths - param->memory_start);
+    param->total_size     = (unsigned long)(out     - param->memory_start);
+
+    param->out            = out;
+    param->num_flows      = num_flows;
+}
 
 void hmac_sha1_post(operation_batch_t *ops,
 		    hmac_sha1_param_t   *param)
@@ -222,8 +276,9 @@ void hmac_sha1_post(operation_batch_t *ops,
 	unsigned sum_outsize = 0;
 	for (operation_batch_t::iterator i = ops->begin();
 	     i != ops->end(); i++) {
-		assert((*i).in_len > 0);
-		memcpy((*i).out,   param->out + sum_outsize,   (*i).out_len);
+        (*i).out_len = 20;
+//        assert((*i).in_len > 0);
+        memcpy((*i).out, param->out + sum_outsize,   (*i).out_len);
 		sum_outsize += (*i).out_len;
 	}
 }
@@ -642,56 +697,90 @@ static void test_file_stream_hmac_sha1(unsigned num_flows,
 }
 
 
-//static void test_file_split_hmac_sha1(unsigned num_flows, unsigned flow_len)
-//{
-//    printf("num_flows: %d, flow_len:%d.\n", num_flows, flow_len);
-//
-//    uint64_t startTime = get_usec();
-//
-//    device_context dev_ctx;
-//    dev_ctx.init(num_flows * max(flow_len, 512) * 1.1, 0);
-//    sha_context sha_ctx(&dev_ctx);
-//
-//    pinned_mem_pool *pool;
-//    pool = new pinned_mem_pool();
-//    pool->init(num_flows * max(flow_len, 512) * 1.1);
-//
-////    operation_batch_t ops;
-//    hmac_sha1_param_t param;
-//
-////    gen_hmac_sha1_data(&ops, num_flows, flow_lens);
-//    hmac_sha1_prepare(&ops, &param, pool);
-//
-//    uint64_t dataTime = get_usec();
-//    printf("dataTime: %d.\n", dataTime - startTime);
-//
-//    sha_ctx.hmac_sha1((void*)param.memory_start,
-//              param.in_pos,
-//              param.key_pos,
-//              param.pkt_offset_pos,
-//              param.length_pos,
-//              param.total_size,
-//              param.out,
-//              param.num_flows,
-//              0);
-//
-//    sha_ctx.sync(0);
+static void test_file_split_hmac_sha1(const char *file_path)
+{
+    uint64_t startTime = get_usec();
+
+    int num_flows = 1024;
+    int flow_len = 1024 * 1024;
+
+    device_context dev_ctx;
+    dev_ctx.init(num_flows * max(flow_len, 512) * 1.8, 0);
+    sha_context sha_ctx(&dev_ctx);
+
+    pinned_mem_pool *pool;
+    pool = new pinned_mem_pool();
+    pool->init(num_flows * max(flow_len, 512) * 1.8);
+
+    uint64_t poolTime = get_usec();
+    printf("poolTime: %d.\n", poolTime - startTime);
+
+//    operation_batch_t ops;
+    hmac_sha1_param_t param;
+
+    operation_batch_t ops;
+//    gen_hmac_sha1_data(&ops, TOTAL_THREAD_NUM, 1024);
+
+    hmac_file_sha1_prepare(file_path, &ops, &param, pool);
+
+    uint64_t dataTime = get_usec();
+    printf("dataTime: %d.\n", dataTime - poolTime);
+
+    sha_ctx.hmac_sha1((void*)param.memory_start,
+              param.in_pos,
+              param.key_pos,
+              param.pkt_offset_pos,
+              param.length_pos,
+              param.total_size,
+              param.out,
+              param.num_flows,
+              0);
+
+    sha_ctx.sync(0);
+
+    uint64_t endTime = get_usec();
+    std::cout << "sha1Time: " << endTime - dataTime << " us" << std::endl;
+
+    printf("num_flows: %d\n", param.num_flows);
+
+    printf("data sha1 time: %d, total time: %d.\n", endTime - poolTime, endTime - startTime);
+
 //    hmac_sha1_post(&ops, &param);
 //
-//    uint64_t endTime = get_usec();
-//    std::cout << "sha1Time: " << endTime - dataTime << " us" << std::endl;
+//    int iRet = -1;
+//    for (int i = 0; i < ops.size() - 1; i++) {
+//        uint8_t out_temp[HMAC_SHA1_HASH_SIZE];
 //
-//    int iRet = verify_hmac_sha1(&ops);
+//        unsigned len;
+//        HMAC(EVP_sha1(),
+//             (ops[i]).key,
+//             (ops[i]).key_len,
+//             (ops[i]).in,
+//             (ops[i]).in_len,
+//             out_temp,
+//             &len);
+//        assert(len == HMAC_SHA1_HASH_SIZE);
+//
+//        if (memcmp(out_temp, (ops[i]).out, (ops[i]).out_len) != 0) {
+//            iRet = -1;
+//        } else {
+//            iRet = 0;
+//        }
+//    }
+//
 //    uint64_t hmacTime = get_usec();
 //    printf("Verify ret: %d, time: %d.\n", iRet, hmacTime - endTime);
-//
-//    for (int j = 0; j < 20; ++j) {
-//        printf("%X", (char)ops[0].out[j] & 0xFF);
+
+
+//    for (int i = 0; i < ops.size(); ++i) {
+//        for (int j = 0; j < 20; ++j) {
+//            printf("%X", (char)ops[i].out[j] & 0xFF);
+//        }
+//        std::cout << std::endl;
 //    }
-//    std::cout << std::endl;
-//
-//    delete pool;
-//}
+
+    delete pool;
+}
 
 int main(int argc, char *argv[])
 {
@@ -723,7 +812,11 @@ int main(int argc, char *argv[])
         } else if (strcmp(argv[i], "-fs") == 0) {
             test_file_stream_hmac_sha1(atoi(argv[2]), atoi(argv[3]), atoi(argv[4]));
             return 0;
-        } else {
+        } else if (strcmp(argv[i], "-file") == 0) {
+            test_file_split_hmac_sha1(argv[2]);
+            return 0;
+        }
+        else {
           goto parse_error;
         }
       i++;

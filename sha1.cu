@@ -1,7 +1,9 @@
 #include "sha1.hh"
 
+#include <stdio.h>
 #include <stdint.h>
 #include <assert.h>
+#include <sys/time.h>
 
 __device__ uint32_t swap(uint32_t v)
 {
@@ -1092,18 +1094,21 @@ uint32_t ipad[16] = {0x36363636,0x36363636,0x36363636,0x36363636,
 		     0x36363636,0x36363636,0x36363636,0x36363636,
 		     0x36363636,0x36363636,0x36363636,0x36363636,};
 
-__global__ void computeHMAC_SHA1(char* buf, char* keys,  uint32_t *offsets, uint16_t *lengths, uint32_t *outputs, int N, uint8_t * checkbits)
+__global__ void computeHMAC_SHA1(char* buf, char* keys,  uint32_t *offsets, /*uint16_t*/uint32_t *lengths, uint32_t *outputs, int N, uint8_t * checkbits)
 {
-	uint32_t w_register[16];
+    uint32_t w_register[16];
 
-	int index = blockIdx.x * blockDim.x + threadIdx.x;
-	if (index < N) {
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+//    printf("Gpu index: %d. N: %d.\n", index, N);
+
+    if (index < N) {
 		uint32_t *w = w_register;
 		hash_digest_t h;
 		uint32_t offset = offsets[index];
-		uint16_t length = lengths[index];
+        /*uint16_t*/uint32_t length = lengths[index];
 		uint32_t *out = outputs + 5 * index;
 
+//        printf("Gpu index: %d. N: %d, offset: %d, data len: %d.\n", index, N, offset, length);
 
 		for (unsigned i = 0; i < 16; i++)
 			w[i] = 0x36363636;
@@ -1120,8 +1125,8 @@ __global__ void computeHMAC_SHA1(char* buf, char* keys,  uint32_t *offsets, uint
 		computeSHA1Block((char*)w, w, 0, 64, h);
 
 		//SHA1 compute on mesage
-		unsigned num_iter = (length + 63 + 9) / 64;
-		for (unsigned i = 0; i < num_iter; i++)
+        unsigned int num_iter = (length + 63 + 9) / 64;
+        for (unsigned int i = 0; i < num_iter; i++)
 			computeSHA1Block(buf + offset , w, i * 64  , length , h);
 
 		*(out)   = swap(h.h1);
@@ -1152,20 +1157,28 @@ __global__ void computeHMAC_SHA1(char* buf, char* keys,  uint32_t *offsets, uint
 		*(out+2) = swap(h.h3);
 		*(out+3) = swap(h.h4);
 		*(out+4) = swap(h.h5);
-	}
-        __syncthreads();
 
-	if (threadIdx.x == 0)
-		*(checkbits + blockIdx.x) = 1;
+//        printf("out: %d %d %d %d %d\n", *out, *(out+1), *(out+2), *(out+3), *(out+4));
+	}
+    __syncthreads();
+
+//    printf("block id: %d, thread id: %d, index: %d, time: %d.\n", blockIdx.x, threadIdx.x, index, endTime - startTime);
+
+    if (threadIdx.x == 0) {
+      *(checkbits + blockIdx.x) = 1;
+    }
 
 }
 
-void hmac_sha1_gpu(char* buf, char* keys,  uint32_t *offsets, uint16_t *lengths,
+void hmac_sha1_gpu(char* buf, char* keys,  uint32_t *offsets, /*uint16_t*/ uint32_t *lengths,
 		   uint32_t *outputs, int N, uint8_t * checkbits,
 		   unsigned threads_per_blk, cudaStream_t stream)
 {
 	int num_blks = (N + threads_per_blk - 1) / threads_per_blk;
-	if (stream == 0) {
+
+    printf("Num blks: %d, thread_per_blk: %d\n", num_blks, threads_per_blk);
+    if (stream == 0) {
+        printf("Stream == 0\n");
 		computeHMAC_SHA1<<<num_blks, threads_per_blk>>>(
 		       buf, keys, offsets, lengths, outputs, N, checkbits);
 	} else  {
