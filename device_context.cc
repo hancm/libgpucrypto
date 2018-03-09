@@ -3,6 +3,7 @@
 #include <sys/time.h>
 //#include <cutil_inline.h>
 #include <assert.h>
+#include <stdio.h>
 
 static uint64_t get_now() {
 	struct timeval tv;
@@ -43,27 +44,43 @@ bool device_context::init(const unsigned long size, const unsigned nstream)
 
 	if (nstream_ > 0) {
 		for (unsigned i = 1; i <= nstream; i++) {
-            /*cutilSafeCall*/(cudaStreamCreate(&stream_ctx_[i].stream));
+            cudaStream_t &stream = stream_ctx_[i].stream;
+            uint64_t cudaStreamTime = get_now();
+            /*cutilSafeCall*/(cudaStreamCreate(&stream/*&stream_ctx_[i].stream*/));
+            uint64_t cudaEndStreamTime = get_now();
+            printf("stream: %d, cuda create stream time: %d.\n", i, cudaEndStreamTime - cudaStreamTime);
 
 			if (!stream_ctx_[i].pool.init(size))
 				return false;
 			stream_ctx_[i].state = READY;
 
+            uint64_t cudaHostAllocTime = get_now();
             /*cutilSafeCall*/(cudaHostAlloc(&ret, MAX_BLOCKS, cudaHostAllocMapped));
 			stream_ctx_[i].checkbits = (uint8_t*)ret;
             /*cutilSafeCall*/(cudaHostGetDevicePointer((void **)&stream_ctx_[i].checkbits_d, ret, 0));
+            uint64_t cudaHostEndAllocTime = get_now();
+            printf("cuda host alloc time: %d.\n", cudaHostEndAllocTime - cudaHostAllocTime);
 		}
 	} else {
-		stream_ctx_[0].stream = 0;
+        uint64_t startTime = get_now();
+        stream_ctx_[0].stream = 0;
 		if (!stream_ctx_[0].pool.init(size))
 			return false;
 
+        uint64_t poolInitTime = get_now();
+
+        printf("stream 0 pool init time: %d.\n", poolInitTime - startTime);
+
+        uint64_t startHostAlloc = get_now();
 		stream_ctx_[0].state = READY;
 
         /*cutilSafeCall*/(cudaHostAlloc(&ret, MAX_BLOCKS, cudaHostAllocMapped));
 		stream_ctx_[0].checkbits = (uint8_t*)ret;
         /*cutilSafeCall*/(cudaHostGetDevicePointer((void **)&stream_ctx_[0].checkbits_d, ret, 0));
-	}
+
+        uint64_t endHostAlloc = get_now();
+        printf("Host Alloc time: %d.\n", endHostAlloc - startHostAlloc);
+    }
 	return true;
 }
 

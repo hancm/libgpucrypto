@@ -1099,8 +1099,6 @@ __global__ void computeHMAC_SHA1(char* buf, char* keys,  uint32_t *offsets, /*ui
     uint32_t w_register[16];
 
     int index = blockIdx.x * blockDim.x + threadIdx.x;
-//    printf("Gpu index: %d. N: %d.\n", index, N);
-
     if (index < N) {
 		uint32_t *w = w_register;
 		hash_digest_t h;
@@ -1108,7 +1106,7 @@ __global__ void computeHMAC_SHA1(char* buf, char* keys,  uint32_t *offsets, /*ui
         /*uint16_t*/uint32_t length = lengths[index];
 		uint32_t *out = outputs + 5 * index;
 
-//        printf("Gpu index: %d. N: %d, offset: %d, data len: %d.\n", index, N, offset, length);
+//        printf("blockDim: %d, block id: %d, thread id: %d, Gpu index: %d. N: %d, offset: %d, data len: %d.\n", blockDim.x, blockIdx.x, threadIdx.x, index, N, offset, length);
 
 		for (unsigned i = 0; i < 16; i++)
 			w[i] = 0x36363636;
@@ -1156,13 +1154,9 @@ __global__ void computeHMAC_SHA1(char* buf, char* keys,  uint32_t *offsets, /*ui
 		*(out+1) = swap(h.h2);
 		*(out+2) = swap(h.h3);
 		*(out+3) = swap(h.h4);
-		*(out+4) = swap(h.h5);
-
-//        printf("out: %d %d %d %d %d\n", *out, *(out+1), *(out+2), *(out+3), *(out+4));
+        *(out+4) = swap(h.h5);
 	}
     __syncthreads();
-
-//    printf("block id: %d, thread id: %d, index: %d, time: %d.\n", blockIdx.x, threadIdx.x, index, endTime - startTime);
 
     if (threadIdx.x == 0) {
       *(checkbits + blockIdx.x) = 1;
@@ -1176,9 +1170,9 @@ void hmac_sha1_gpu(char* buf, char* keys,  uint32_t *offsets, /*uint16_t*/ uint3
 {
 	int num_blks = (N + threads_per_blk - 1) / threads_per_blk;
 
-    printf("Num blks: %d, thread_per_blk: %d\n", num_blks, threads_per_blk);
+//    printf("Num blks: %d, thread_per_blk: %d\n", num_blks, threads_per_blk);
     if (stream == 0) {
-        printf("Stream == 0\n");
+//        printf("Stream == 0\n");
 		computeHMAC_SHA1<<<num_blks, threads_per_blk>>>(
 		       buf, keys, offsets, lengths, outputs, N, checkbits);
 	} else  {

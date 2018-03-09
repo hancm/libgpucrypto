@@ -2,9 +2,18 @@
 #define __TEST_COMMON_HH__
 
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include <vector>
 
-using namespace std;
+#define CUDA_SAFE_CALL(call) {                                               \
+    cudaError err = call;                                                    \
+    if (cudaSuccess != err) {                                                \
+        fprintf(stderr, "Cuda error in file '%s' in line %i : %s.\n",        \
+                __FILE__, __LINE__, cudaGetErrorString( err) );              \
+        exit(EXIT_FAILURE);                                                  \
+    } }
 
 typedef enum {RSA_PRIV_DEC, AES_ENC, AES_DEC, HMAC_SHA1} opcode_t;
 
@@ -47,7 +56,7 @@ typedef struct operation
 	uint32_t     iv_len;
 } operation_t;
 
-typedef vector<operation_t> operation_batch_t;
+typedef std::vector<operation_t> operation_batch_t;
 
 typedef enum {CPU, MP, RNS} RSA_MODE;
 

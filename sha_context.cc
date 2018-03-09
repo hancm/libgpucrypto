@@ -2,6 +2,8 @@
 #include "sha1.hh"
 
 #include <assert.h>
+#include <stdio.h>
+
 #include <cuda_runtime.h>
 //#include <cutil_inline.h>
 
@@ -29,9 +31,13 @@ void sha_context::hmac_sha1(const void           *memory_start,
 			    const unsigned long  num_flows,
 			    const unsigned int   stream_id)
 {
+    assert(NULL != memory_start);
 	assert(dev_ctx_->get_state(stream_id) == READY);
+
 	dev_ctx_->set_state(stream_id, WAIT_KERNEL);
 	cuda_mem_pool *pool = dev_ctx_->get_cuda_mem_pool(stream_id);
+    assert(NULL != pool);
+
 	void *memory_d = pool->alloc(data_size);;
     assert(NULL != memory_d);
 
@@ -44,10 +50,11 @@ void sha_context::hmac_sha1(const void           *memory_start,
 
 	//variables need for kernel launch
 	int threads_per_blk = SHA1_THREADS_PER_BLK;
-	int num_blks = (num_flows+threads_per_blk-1)/threads_per_blk;
+    int num_blks = (num_flows + threads_per_blk-1) / threads_per_blk;
 
 	//allocate buffer for output
 	uint32_t *out_d = (uint32_t *)pool->alloc(20 * num_flows);
+    assert(NULL != out_d);
 
 	//initialize input memory offset in device memory
 	char     *in_d         = (char *)memory_d + in_pos;
@@ -55,8 +62,15 @@ void sha_context::hmac_sha1(const void           *memory_start,
 	uint32_t *pkt_offset_d = (uint32_t *)((uint8_t *)memory_d + offsets_pos);
     /*uint16_t*/ uint32_t *lengths_d    = /*(uint16_t *)*/(uint32_t*)((uint8_t *)memory_d + lengths_pos);
 
+    assert(NULL != in_d);
+    assert(NULL != keys_d);
+    assert(NULL != pkt_offset_d);
+    assert(NULL != lengths_d);
+
 	//clear checkbits before kernel execution
 	dev_ctx_->clear_checkbits(stream_id, num_blks);
+
+    assert(NULL != dev_ctx_->get_dev_checkbits(stream_id));
 
 	if (dev_ctx_->use_stream() && stream_id > 0) {	//with stream
 		hmac_sha1_gpu(in_d,
@@ -81,7 +95,8 @@ void sha_context::hmac_sha1(const void           *memory_start,
 		assert(0);
 	}
 
-	assert(cudaGetLastError() == cudaSuccess);
+//    printf("cudaLast error: %d, error string: %s.\n", cudaGetLastError(), cudaGetErrorString(cudaGetLastError()));
+    assert(cudaGetLastError() == cudaSuccess);
 
 	streams[stream_id].out_d   = (uint8_t*)out_d;
 	streams[stream_id].out     = out;

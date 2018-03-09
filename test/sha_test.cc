@@ -152,7 +152,7 @@ void hmac_sha1_prepare(operation_batch_t *ops,
 	param->num_flows      = num_flows;
 }
 
-void hmac_file_sha1_prepare(const char *file_path,
+void hmac_file_sha1_prepare(const char *file_path, unsigned tot_in_size,
                             operation_batch_t *ops,
                             hmac_sha1_param_t *param,
                             pinned_mem_pool   *pool)
@@ -166,12 +166,12 @@ void hmac_file_sha1_prepare(const char *file_path,
     uint8_t  *keys;
     uint8_t  *out;
 
-    unsigned tot_in_size = 0; /* total size of input text */
-    struct stat buf;
-    stat(file_path, &buf);
-    tot_in_size = buf.st_size;
-    printf("file size: %d\n", tot_in_size);
-    assert(tot_in_size > 0);
+//    unsigned tot_in_size = 0; /* total size of input text */
+//    struct stat buf;
+//    stat(file_path, &buf);
+//    tot_in_size = buf.st_size;
+//    printf("file size: %d\n", tot_in_size);
+//    assert(tot_in_size > 0);
 
 //    for (operation_batch_t::iterator i = ops->begin();
 //         i != ops->end(); i++) {
@@ -252,6 +252,88 @@ void hmac_file_sha1_prepare(const char *file_path,
 //
 //        cnt++;
 //        sum_input += (*i).in_len;
+//    }
+
+    //set param for sha_context api
+    param->memory_start   = (uint8_t*)pkt_offset;                                           // pool中param开始地址
+    param->pkt_offset_pos = (unsigned long)((uint8_t *)pkt_offset - param->memory_start);   // 每个分片数据块的偏移量位置
+    param->key_pos        = (unsigned long)(keys    - param->memory_start);                 // 密钥位置
+    param->in_pos         = (unsigned long)(in      - param->memory_start);                 // 输入数据位置
+    param->length_pos     = (unsigned long)((uint8_t *)lengths - param->memory_start);      // 各个分片数据块长度
+    param->total_size     = (unsigned long)(out     - param->memory_start);                 // pool分配的总的数据长度
+
+    param->out            = out;                                                            // 输出的hash地址
+    param->num_flows      = num_flows;                                                      // 输入数据分块数目
+}
+
+void hmac_file_stream_sha1_prepare(std::ifstream &inFile, int file_pos,
+                            int tot_in_size,
+                            operation_batch_t *ops,
+                            hmac_sha1_param_t *param,
+                            pinned_mem_pool   *pool)
+{
+    assert(param != NULL);
+    assert(pool != NULL);
+
+    uint32_t *pkt_offset;
+    uint8_t  *in;
+    uint32_t *lengths;
+    uint8_t  *keys;
+    uint8_t  *out;
+
+    unsigned long num_flows = TOTAL_THREAD_NUM;
+
+    int threadDataLen = tot_in_size / (num_flows - 1);
+    int threadDataFree = tot_in_size % (num_flows - 1);
+    if (0 == threadDataFree) {
+        threadDataLen = (tot_in_size - 1) / (num_flows - 1);
+        threadDataFree = tot_in_size % threadDataLen;
+    }
+
+    if (0 == tot_in_size % num_flows) {
+        threadDataLen = tot_in_size / num_flows;
+        threadDataFree = 0;
+    }
+    printf("dataLen: %d, dataFree: %d.\n", threadDataLen, threadDataFree);
+
+    //allocate memory
+    pkt_offset = (uint32_t *)pool->alloc(sizeof(uint32_t) * (num_flows));
+    keys       = (uint8_t  *)pool->alloc(num_flows * MAX_KEY_SIZE);
+    in         = (uint8_t  *)pool->alloc(tot_in_size);
+    lengths     = (uint32_t *)pool->alloc(sizeof(uint32_t) * num_flows);
+    out        = (uint8_t  *)pool->alloc(HMAC_SHA1_HASH_SIZE * num_flows);
+
+    assert(pkt_offset != NULL);
+    assert(keys       != NULL);
+    assert(in         != NULL);
+    assert(lengths    != NULL);
+    assert(out        != NULL);
+
+    // 生成数据
+    // memcpy(keys + cnt * MAX_KEY_SIZE, (*i).key,  MAX_KEY_SIZE);
+//    memcpy(in + sum_input,  (*i).in,   (*i).in_len);
+
+    inFile.seekg(file_pos * tot_in_size, std::ios::beg);
+    inFile.read((char*)in, tot_in_size);
+    if (!inFile) {
+        printf("Failed to write.\n");
+        return;
+    }
+
+    // 生成数据偏移和长度
+    for (int i = 0; i < num_flows; i++) {
+        pkt_offset[i] = threadDataLen * i;
+        lengths[i]    = threadDataLen;
+    }
+
+    if (0 != threadDataFree) {
+        lengths[num_flows - 1] = threadDataFree;
+    }
+
+//    printf("ops size: %d, num flows: %d.\n", ops->size(), num_flows);
+//    for (int i = 0; i < ops->size() - 1 && i < num_flows - 1; ++i) {
+//        memcpy((*ops)[i].in, in + pkt_offset[i], lengths[i]);
+//        (*ops)[i].in_len = lengths[i];
 //    }
 
     //set param for sha_context api
@@ -701,27 +783,46 @@ static void test_file_split_hmac_sha1(const char *file_path)
 {
     uint64_t startTime = get_usec();
 
-    int num_flows = 1024;
-    int flow_len = 1024 * 1024;
+    unsigned tot_in_size = 0; /* total size of input text */
+    struct stat buf;
+    stat(file_path, &buf);
+    tot_in_size = buf.st_size;
+//    printf("file size: %d\n", tot_in_size);
+    assert(tot_in_size > 0);
+
+    uint64_t fileSize = get_usec();
+    printf("fileSizeTime: %d.\n", fileSize - startTime);
+
+//    int num_flows = 1024;
+//    int flow_len = 1024 * 1024;
 
     device_context dev_ctx;
-    dev_ctx.init(num_flows * max(flow_len, 512) * 1.8, 0);
+
+    // 初始化设备内存 cudaMalloc 耗时,当前设备至少500ms，与初始大小关系不大
+    dev_ctx.init(tot_in_size + 3 * 1024 * 1024, 0);//(num_flows * max(flow_len, 512) * 1.8, 0);
+    uint64_t devInitTime = get_usec();
+    printf("devInitTime: %d.\n", devInitTime - fileSize);
+
     sha_context sha_ctx(&dev_ctx);
 
+    uint64_t devTime = get_usec();
+    printf("sha context time: %d.\n", devTime - devInitTime);
+
+    // 比较耗时
     pinned_mem_pool *pool;
     pool = new pinned_mem_pool();
-    pool->init(num_flows * max(flow_len, 512) * 1.8);
+    pool->init(tot_in_size + 3 * 1024 * 1024);//(num_flows * max(flow_len, 512) * 1.8);
 
     uint64_t poolTime = get_usec();
-    printf("poolTime: %d.\n", poolTime - startTime);
+    printf("poolTime: %d.\n", poolTime - devTime);
 
 //    operation_batch_t ops;
     hmac_sha1_param_t param;
 
-    operation_batch_t ops;
+//    operation_batch_t ops;
 //    gen_hmac_sha1_data(&ops, TOTAL_THREAD_NUM, 1024);
 
-    hmac_file_sha1_prepare(file_path, &ops, &param, pool);
+    hmac_file_sha1_prepare(file_path, tot_in_size, NULL, /*&ops,*/ &param, pool);
 
     uint64_t dataTime = get_usec();
     printf("dataTime: %d.\n", dataTime - poolTime);
@@ -741,7 +842,7 @@ static void test_file_split_hmac_sha1(const char *file_path)
     uint64_t endTime = get_usec();
     std::cout << "sha1Time: " << endTime - dataTime << " us" << std::endl;
 
-    printf("num_flows: %d\n", param.num_flows);
+//    printf("num_flows: %d\n", param.num_flows);
 
     printf("data sha1 time: %d, total time: %d.\n", endTime - poolTime, endTime - startTime);
 
@@ -782,6 +883,112 @@ static void test_file_split_hmac_sha1(const char *file_path)
     delete pool;
 }
 
+static void test_file_split_stream_hmac_sha1(const char *file_path, unsigned num_stream)
+{
+    uint64_t startTime = get_usec();
+
+    int num_flows = 1024;
+    int flow_len = 1024 * 1024;
+
+    device_context dev_ctx;
+    dev_ctx.init(num_flows * max(flow_len, 512) * 0.8, num_stream);
+    sha_context sha_ctx(&dev_ctx);
+    uint64_t devInitTime = get_usec();
+    printf("DevinitTime: %d.\n", devInitTime - startTime);
+
+    pinned_mem_pool *pool;
+    pool = new pinned_mem_pool();
+    pool->init(num_flows * max(flow_len, 512) * 1.8);
+
+    operation_batch_t ops[MAX_STREAM + 1];
+    hmac_sha1_param_t param[MAX_STREAM + 1];
+
+    uint64_t poolTime = get_usec();
+    printf("Pooltime: %d.\n", poolTime - devInitTime);
+
+    unsigned tot_in_size = 0; /* total size of input text */
+    struct stat buf;
+    stat(file_path, &buf);
+    tot_in_size = buf.st_size / num_stream;
+    printf("file size: %d\n", tot_in_size);
+    assert(tot_in_size > 0);
+
+    std::ifstream inFile(file_path, std::ifstream::binary);
+    if (!inFile) {
+        printf("Failed to open.\n");
+        return;
+    }
+
+    for (unsigned i = 1; i <= num_stream; i++) {
+        hmac_file_stream_sha1_prepare(inFile, i -1 , tot_in_size, &ops[i], &param[i], pool);
+    }
+    inFile.close();
+
+    uint64_t dataTime = get_usec();
+    std::cout << "fileTime: " << dataTime - poolTime << std::endl;
+
+    //warmup
+    for (unsigned i = 1; i <= num_stream; i++) {
+//        uint64_t datastreamTime = get_usec();
+//        hmac_file_stream_sha1_prepare(inFile, i -1 , tot_in_size, &ops[i], &param[i], pool);
+        uint64_t endDatastreamtime = get_usec();
+//        printf("stream: %d, datatime: %d.\n", i, endDatastreamtime - datastreamTime);
+
+        sha_ctx.hmac_sha1((void*)param[i].memory_start,
+                  param[i].in_pos,
+                  param[i].key_pos,
+                  param[i].pkt_offset_pos,
+                  param[i].length_pos,
+                  param[i].total_size,
+                  param[i].out,
+                  param[i].num_flows,
+                  i);
+        uint64_t hmacsha1Time = get_usec();
+        printf("stream: %d, hmac sha1 time: %d.\n", i, hmacsha1Time - endDatastreamtime);
+    }
+
+    uint64_t hmacsha1timestart = get_usec();
+    printf("no sync time: %d.\n", hmacsha1timestart - dataTime);
+//    inFile.close();
+
+
+    for (unsigned i = 1; i <= num_stream; i++) {
+        uint64_t startSyncTime = get_usec();
+        sha_ctx.sync(i, true);
+        uint64_t endSyncTime = get_usec();
+        printf("stream: %d, sync: %d.\n", i, endSyncTime - startSyncTime);
+    }
+
+    uint64_t endTime = get_usec();
+    std::cout << "sha1Time: " << endTime - dataTime << " us" << std::endl;
+
+    printf("data sha1 time: %d, Total time: %d.\n", endTime - poolTime, endTime - startTime);
+
+//    for (unsigned i = 1; i <= num_stream; i++) {
+//        hmac_sha1_post(&ops[i], &param[i]);
+//    }
+
+//    uint64_t postTime = get_usec();
+//    std::cout << "postTime: " <<  postTime - endTime << " us" << std::endl;
+
+//    for (unsigned i = 1; i <= num_stream; i++) {
+//        int iRet = verify_hmac_sha1(&ops[i]);
+//        printf("Verify ret: %d\n", iRet);
+//    }
+//
+//    uint64_t hmacTime = get_usec();
+//    printf("Verify time: %d.\n", hmacTime - postTime);
+//
+//    for (unsigned i = 1; i <= num_stream; i++) {
+//        for (int j = 0; j < 20; ++j) {
+//            printf("%X", (char)ops[i][0].out[j] & 0xFF);
+//        }
+//        std::cout << std::endl;
+//    }
+
+    delete pool;
+}
+
 int main(int argc, char *argv[])
 {
     srand(time(NULL));
@@ -814,6 +1021,9 @@ int main(int argc, char *argv[])
             return 0;
         } else if (strcmp(argv[i], "-file") == 0) {
             test_file_split_hmac_sha1(argv[2]);
+            return 0;
+        } else if (strcmp(argv[i], "-sfile") == 0) {
+            test_file_split_stream_hmac_sha1(argv[2], atoi(argv[3]));
             return 0;
         }
         else {
